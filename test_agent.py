@@ -11,9 +11,11 @@ import json
 import os
 import sys
 import urllib.request
-from dotenv import load_dotenv
-
-load_dotenv()
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
 
 
 def test_diagnostics():

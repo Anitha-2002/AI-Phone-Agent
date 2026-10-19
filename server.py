@@ -11,8 +11,10 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+from datetime import datetime
+
 from fastapi import FastAPI, Request, Response, WebSocket  # noqa: E402
-from fastapi.responses import HTMLResponse, JSONResponse  # noqa: E402
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse  # noqa: E402
 from loguru import logger  # noqa: E402
 from pydantic import BaseModel  # noqa: E402
 from twilio.twiml.voice_response import Connect, VoiceResponse  # noqa: E402
@@ -259,8 +261,48 @@ async def api_diagnostics():
         "public_base_url": PUBLIC_BASE_URL or "Missing (set in .env)",
     }
 
+    # 6. Call Recording Check
+    call_rec = os.getenv("CALL_RECORDING", "false").lower() in ("true", "1", "yes")
+    results["call_recording"] = {
+        "ok": True,
+        "enabled": call_rec,
+        "storage_dir": "recordings/",
+        "note": "Enabled - audio saved to recordings/*.wav" if call_rec else "Disabled (set CALL_RECORDING=true in .env to record calls)",
+    }
+
     all_ok = all(v.get("ok", False) for v in results.values())
     return {"status": "healthy" if all_ok else "attention_needed", "services": results}
+
+
+@app.get("/api/recordings")
+async def api_list_recordings():
+    """List all audio recordings stored on disk."""
+    if not os.path.exists("recordings"):
+        return {"recordings": []}
+    files = []
+    for fname in sorted(os.listdir("recordings"), reverse=True):
+        if fname.endswith(".wav"):
+            fpath = os.path.join("recordings", fname)
+            stat = os.stat(fpath)
+            files.append(
+                {
+                    "filename": fname,
+                    "size_kb": round(stat.st_size / 1024, 1),
+                    "created_at": datetime.fromtimestamp(stat.st_ctime).strftime("%Y-%m-%d %H:%M:%S"),
+                    "download_url": f"/api/recordings/{fname}",
+                }
+            )
+    return {"recordings": files}
+
+
+@app.get("/api/recordings/{filename}")
+async def api_get_recording(filename: str):
+    """Stream or download a specific call recording WAV file."""
+    clean_name = os.path.basename(filename)
+    fpath = os.path.join("recordings", clean_name)
+    if not os.path.isfile(fpath):
+        return JSONResponse(status_code=404, content={"error": "Recording file not found"})
+    return FileResponse(fpath, media_type="audio/wav", filename=clean_name)
 
 
 @app.post("/api/test/chat")
@@ -367,9 +409,45 @@ async def test_dashboard():
       </div>
       <div id="chatStatus" class="status-box" style="margin-top: 12px;">Type a message above to test response tone...</div>
     </div>
+    <!-- Call Recordings Card -->
+    <div class="card full">
+      <h2>🎧 Call Recordings (recordings/)</h2>
+      <p style="font-size: 0.85rem; color: #64748b; margin-top: 0;">Controlled by <code>CALL_RECORDING=true</code> in <code>.env</code>. Audio is stored locally as WAV files.</p>
+      <button onclick="loadRecordings()" style="background: #475569; width: auto; padding: 8px 16px; margin-bottom: 12px;">Refresh Recordings</button>
+      <div id="recordingsList" style="font-size: 0.9rem;">Click above to view saved recordings...</div>
+    </div>
   </div>
 
   <script>
+    async function loadRecordings() {{
+      const container = document.getElementById('recordingsList');
+      container.innerHTML = 'Loading recordings...';
+      try {{
+        const res = await fetch('/api/recordings');
+        const data = await res.json();
+        if (!data.recordings || data.recordings.length === 0) {{
+          container.innerHTML = '<p style="color:#64748b; margin:0;">No call recordings found yet. Complete a call with CALL_RECORDING=true to record audio.</p>';
+          return;
+        }}
+        let html = '<ul style="list-style:none; padding:0; margin:0;">';
+        for (const r of data.recordings) {{
+          html += `<li style="padding:10px 0; border-bottom:1px solid #e2e8f0; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px;">
+            <div>
+              <b>${{r.filename}}</b> <span style="color:#64748b; font-size:0.8rem;">(${{r.size_kb}} KB &bull; ${{r.created_at}})</span>
+            </div>
+            <div style="display:flex; align-items:center; gap:8px;">
+              <audio controls src="${{r.download_url}}" style="height:32px;"></audio>
+              <a href="${{r.download_url}}" download style="font-size:0.85rem; color:#2563eb; text-decoration:none; font-weight:600;">Download</a>
+            </div>
+          </li>`;
+        }}
+        html += '</ul>';
+        container.innerHTML = html;
+      }} catch (err) {{
+        container.innerHTML = 'Error: ' + err.message;
+      }}
+    }}
+
     async function triggerCall() {{
       const to = document.getElementById('callTo').value.trim();
       const from = document.getElementById('callFrom').value.trim();
