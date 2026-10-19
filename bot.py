@@ -14,9 +14,10 @@ from pipecat.processors.aggregators.llm_response_universal import (
     LLMUserAggregatorParams,
 )
 from pipecat.serializers.twilio import TwilioFrameSerializer
-from pipecat.services.cartesia.tts import CartesiaTTSService
-from pipecat.services.deepgram.stt import DeepgramSTTService
-from pipecat.services.together.llm import TogetherLLMService
+from pipecat.services.kokoro.tts import KokoroTTSService
+from pipecat.services.ollama.llm import OLLamaLLMService
+from pipecat.services.whisper.stt import WhisperSTTService
+from pipecat.transcriptions.language import Language
 from pipecat.transports.websocket.fastapi import (
     FastAPIWebsocketParams,
     FastAPIWebsocketTransport,
@@ -51,25 +52,26 @@ async def run_bot(websocket: WebSocket, stream_sid: str, call_sid: str) -> None:
         ),
     )
 
-    stt = DeepgramSTTService(
-        api_key=os.environ["DEEPGRAM_API_KEY"],
-        settings=DeepgramSTTService.Settings(
-            model=os.getenv("STT_MODEL", "nova-3-general"),
-            language="en",
+    stt = WhisperSTTService(
+        device=os.getenv("WHISPER_DEVICE", "auto"),
+        settings=WhisperSTTService.Settings(
+            model=os.getenv("WHISPER_MODEL", "base"),
+            language=Language.EN,
         ),
     )
 
-    llm = TogetherLLMService(
-        api_key=os.environ["TOGETHER_API_KEY"],
-        settings=TogetherLLMService.Settings(
-            model=os.getenv("LLM_MODEL", "meta-llama/Llama-3.3-70B-Instruct-Turbo"),
+    llm = OLLamaLLMService(
+        base_url=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1"),
+        settings=OLLamaLLMService.Settings(
+            model=os.getenv("LLM_MODEL", "llama3.1:8b"),
             system_instruction=SYSTEM_PROMPT,
         ),
     )
 
-    tts = CartesiaTTSService(
-        api_key=os.environ["CARTESIA_API_KEY"],
-        settings=CartesiaTTSService.Settings(voice=os.environ["CARTESIA_VOICE_ID"]),
+    tts = KokoroTTSService(
+        settings=KokoroTTSService.Settings(
+            voice=os.getenv("KOKORO_VOICE", "af_heart"),
+        ),
     )
 
     context = LLMContext()

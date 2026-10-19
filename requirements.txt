@@ -1,4 +1,4 @@
-pipecat-ai[websocket,deepgram,cartesia,together,silero]
+pipecat-ai[websocket,whisper,silero,ollama,kokoro]
 fastapi
 uvicorn[standard]
 twilio

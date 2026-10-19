@@ -1,28 +1,28 @@
 # AI phone agent: Phase 0 and Phase 1
 
-Hosted STT (Deepgram) + LLM (Together) + TTS (Cartesia), orchestrated by Pipecat, over Twilio Media Streams.
+Local STT (faster-whisper) + LLM (Ollama with llama3.1:8b) + TTS (Kokoro), orchestrated by Pipecat, over Twilio Media Streams.
 Written against the Pipecat 1.x docs (`PipelineWorker`, `WorkerRunner`, `Settings` objects, VAD on the user aggregator).
 Pipecat changes quickly: if an import fails, check the current docs at https://docs.pipecat.ai.
 
 ## Phase 0: setup (1-2 days)
 
-1. Write targets: fill in `docs/acceptance_targets.md`.
-2. Plan your recordings: `docs/test_set.md`.
-3. Accounts and keys:
+1. Write targets: fill in `acceptance_targets.md`.
+2. Plan your recordings: `test_set.md`.
+3. Accounts, local models, and keys:
    - Twilio: account SID, auth token, one voice-capable number. Trial accounts can only call verified numbers and play a trial message first.
-   - Deepgram, Together AI, Cartesia: one API key each. Pick a Cartesia voice from their catalog and put its ID in `CARTESIA_VOICE_ID`.
-   - Check each provider's current model names (`STT_MODEL`, `LLM_MODEL`); the defaults in `.env.example` may be outdated.
+   - Ollama: install Ollama (https://ollama.com) and pull your model:
+     ```bash
+     ollama pull llama3.1:8b
+     ```
+   - faster-whisper & Kokoro TTS: models download automatically on first run and run locally; no cloud API keys required.
 4. Environment (Python 3.11+):
 
    ```bash
-   cd ai_caller
    python3.11 -m venv call_env && source call_env/bin/activate
    pip install --upgrade pip
    pip install -r requirements.txt
    cp .env.example .env     # then fill in the values
    ```
-
-   If `pip` rejects an extra name (for example `cartesia`), check the service's page at docs.pipecat.ai for its install extra.
 5. Public tunnel (Twilio must reach your laptop over HTTPS):
 
    ```bash
@@ -49,14 +49,14 @@ Pipecat changes quickly: if an import fails, check the current docs at https://d
 
 - `/voice` (POST): verifies `X-Twilio-Signature` against `PUBLIC_BASE_URL + /voice`, then returns TwiML with `<Connect><Stream url="wss://.../ws">`. If at capacity it says the line is busy and hangs up.
 - `/ws`: verifies the signature on the WebSocket handshake **before** accepting, reads Twilio's `connected`/`start` messages (`parse_telephony_websocket`), then starts one Pipecat pipeline for the call.
-- `bot.py`: `transport.input() -> STT -> user aggregator (Silero VAD) -> LLM -> TTS -> transport.output() -> assistant aggregator`, at 8 kHz. When the caller hangs up, the pipeline is cancelled; when the pipeline ends, the serializer hangs up the Twilio call.
+- `bot.py`: `transport.input() -> STT (faster-whisper) -> user aggregator (Silero VAD) -> LLM (Ollama llama3.1:8b) -> TTS (Kokoro) -> transport.output() -> assistant aggregator`, at 8 kHz. When the caller hangs up, the pipeline is cancelled; when the pipeline ends, the serializer hangs up the Twilio call.
 - `MAX_CONCURRENT_CALLS` is a simple in-process limit. It is replaced by Redis admission control in Phase 6.
 
 ## Troubleshooting
 
 - 403 on `/voice`, or "bad signature" in logs: `PUBLIC_BASE_URL` does not exactly match the URL configured in Twilio (scheme, host, path, no stray trailing slash). To confirm it is only a URL mismatch, you can briefly set `SKIP_TWILIO_SIGNATURE=true` on your laptop. Turn it off again.
 - WebSocket signature failures only: the code tries both the `wss://` and `https://` forms of the URL. If both fail, check Twilio's current Media Streams security docs for the signed URL form.
-- Silence after the greeting: check logs for STT/LLM/TTS auth or model-name errors first.
+- Silence after the greeting: check logs for Ollama connection errors (`OLLAMA_BASE_URL` running and `llama3.1:8b` pulled) or STT/TTS model download issues.
 - Hang-up errors at construction: `TWILIO_ACCOUNT_SID` and `TWILIO_AUTH_TOKEN` are both required by the serializer.
 
 ## Known Phase 1 limits (by design, fixed in later phases)
