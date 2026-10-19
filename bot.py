@@ -16,6 +16,17 @@ from pipecat.processors.aggregators.llm_response_universal import (
 from pipecat.serializers.twilio import TwilioFrameSerializer
 from pipecat.services.kokoro.tts import KokoroTTSService
 from pipecat.services.ollama.llm import OLLamaLLMService
+import sys
+from unittest.mock import MagicMock
+
+# Pipecat's whisper/stt.py on macOS arm64 checks for mlx_whisper at module load
+# even when using faster-whisper. Stub it if not installed so faster-whisper works.
+if "mlx_whisper" not in sys.modules:
+    try:
+        import mlx_whisper  # noqa: F401
+    except ImportError:
+        sys.modules["mlx_whisper"] = MagicMock()
+
 from pipecat.services.whisper.stt import WhisperSTTService
 from pipecat.transcriptions.language import Language
 from pipecat.transports.websocket.fastapi import (
