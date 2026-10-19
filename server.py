@@ -62,11 +62,18 @@ async def health():
     }
 
 
-@app.post("/voice")
+@app.api_route("/voice", methods=["GET", "POST"])
 async def voice_webhook(request: Request):
-    form = dict(await request.form())
+    logger.info(f"Incoming voice webhook from Twilio ({request.method})")
+    form = {}
+    if request.method == "POST":
+        try:
+            form = dict(await request.form())
+        except Exception:
+            pass
     signature = request.headers.get("x-twilio-signature", "")
     if not is_valid_webhook(f"{PUBLIC_BASE_URL}/voice", form, signature):
+        logger.warning("Voice webhook rejected: 403 Forbidden (check SKIP_TWILIO_SIGNATURE in .env)")
         return Response(status_code=403)
 
     response = VoiceResponse()
